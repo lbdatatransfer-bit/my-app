@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Trip & Expense Manager Cloud</title>
+  
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #f0f2f5; margin: 0; padding: 14px; color: #1a202c; padding-bottom: 50px; }
+    .card { background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); margin-bottom: 16px; }
+    h2, h3 { margin: 0 0 14px 0; font-size: 18px; color: #2d3748; }
+
+    /* Cloud Sync Status Indicator */
+    .sync-indicator {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; padding: 3px 8px; border-radius: 12px;
+      background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;
+    }
+    .sync-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Auth & Prompt Screen */
+    #authOverlay, #biometricSetupOverlay {
+      position: fixed; inset: 0; background: #0f172a; z-index: 9999;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .auth-card {
+      background: #ffffff; width: 100%; max-width: 380px; border-radius: 16px; padding: 24px; text-align: center;
+    }
+    .auth-tabs { display: flex; gap: 6px; margin: 16px 0; }
+    .auth-tab-btn {
+      flex: 1; padding: 8px 4px; border: 1px solid #cbd5e0; background: #f8fafc;
+      border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .auth-tab-btn.active { background: #2b6cb0; color: white; border-color: #2b6cb0; }
+
+    .bio-quick-btn {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white; border: none; border-radius: 10px; padding: 14px;
+      font-size: 15px; font-weight: 700; width: 100%; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px;
+    }
+
+    /* Vehicle Filter Header */
+    .vehicle-selector-bar {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+      background: white; padding: 10px 14px; border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05); border: 1px solid #cbd5e0;
+    }
+    .vehicle-selector-bar label { font-size: 13px; font-weight: 700; color: #2b6cb0; margin: 0; white-space: nowrap; }
+
+    /* Finance Overview */
+    .finance-card {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white; border-radius: 12px; padding: 16px; margin-bottom: 16px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25); position: relative;
+    }
+    .finance-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .finance-header .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; }
+    .finance-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .header-btn {
+      background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff; border-radius: 20px; padding: 4px 8px; font-size: 11px;
+      font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 3px;
+    }
+
+    .net-profit-box { margin-bottom: 14px; }
+    .net-profit-box .amount { font-size: 30px; font-weight: 800; margin-top: 2px; }
+    .profit-pos { color: #4ade80; }
+    .profit-neg { color: #f87171; }
+    .masked-text { letter-spacing: 2px; color: #cbd5e1 !important; font-weight: 600; }
+
+    .finance-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      border-top: 1px solid rgba(255,255,255,0.12); padding-top: 12px;
+    }
+    .stat-pill { background: rgba(255,255,255,0.06); padding: 8px 10px; border-radius: 8px; }
+    .stat-pill .title { font-size: 11px; color: #94a3b8; }
+    .stat-pill .val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+
+    /* Tabs */
+    .tab-bar { display: flex; gap: 6px; margin-bottom: 14px; overflow-x: auto; }
+    .tab-btn {
+      flex: 1; padding: 10px 8px; border: none; background: #e2e8f0;
+      color: #4a5568; font-weight: 600; border-radius: 8px; cursor: pointer;
+      font-size: 13px; white-space: nowrap;
+    }
+    .tab-btn.active { background: #2b6cb0; color: #fff; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .full-width { grid-column: span 2; }
+    label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #4a5568; }
+    .field-hint { font-size: 11px; font-weight: 400; color: #718096; margin-left: 4px; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 15px; outline: none; background: #fff; }
+    input:focus, select:focus { border-color: #3182ce; }
+    .search-box { margin-bottom: 12px; position: relative; }
+    .search-box input { padding-left: 36px; background: #f8fafc; }
+    .search-icon { position: absolute; left: 12px; top: 12px; font-size: 14px; color: #a0aec0; }
+
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+    .btn-primary { background: #2b6cb0; color: #fff; }
+    .btn-secondary { background: #edf2f7; color: #4a5568; }
+    .btn-expense { background: #e53e3e; color: #fff; }
+    .btn-action { padding: 8px 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 8px; margin-right: 6px; }
+    .btn-complete { background: #38a169; color: #fff; }
+    .btn-settle { background: #d69e2e; color: #fff; }
+    .btn-whatsapp { background: #25D366; color: #fff; }
+    .btn-rename { background: #4a5568; color: #fff; }
+    .btn-delete { background: #e53e3e; color: #fff; }
+
+    .trip-item, .expense-item, .vehicle-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    .active-trip { border-left: 5px solid #dd6b20; background: #fffaf0; }
+    .expense-item { border-left: 5px solid #e53e3e; }
+
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge-vehicle { background: #e2e8f0; color: #2d3748; }
+    .badge-ongoing { background: #feebc8; color: #c05621; }
+    .badge-paid { background: #c6f6d5; color: #22543d; }
+    .badge-partial { background: #feebc8; color: #c05621; }
+    .badge-pending { background: #fed7d7; color: #9b2c2c; }
+
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; padding: 16px; z-index: 100; }
+    .modal-content { background: #fff; border-radius: 12px; padding: 18px; width: 100%; max-width: 400px; }
+    .calc-preview { background: #edf2f7; border-left: 3px solid #3182ce; padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <!-- STEP 1: AUTHENTICATION OVERLAY -->
+  <div id="authOverlay">
+    <div class="auth-card">
+      <h2 id="authTitle" style="margin-bottom:4px;">Trip Manager Account</h2>
+      <p id="authSubtitle" style="font-size:13px; color:#718096; margin-bottom:12px;">Login with your username from any mobile</p>
+
+      <button class="bio-quick-btn" id="bioQuickUnlockBtn" style="display: none;" onclick="loginWithFingerprint()">
+        <span>👆</span> <span>Unlock with Fingerprint</span>
+      </button>
+
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="authTabLogin" onclick="setAuthTab('login')">Log In</button>
+        <button class="auth-tab-btn" id="authTabSignup" onclick="setAuthTab('signup')">Sign Up</button>
+      </div>
+
+      <div style="text-align:left;">
+        <label>Username (Any length or single letter)</label>
+        <input type="text" id="authUsername" placeholder="e.g. a, 1, or driver101" autocapitalize="none" style="margin-bottom:10px;">
+        <label>Password</label>
+        <input type="password" id="authPassword" placeholder="••••••••" style="margin-bottom:14px;">
+        <button class="btn btn-primary" id="authActionBtn" onclick="handleAuthAction()">Log In to Cloud</button>
+      </div>
+      <p id="authErrorMsg" style="color:#e53e3e; font-size:12px; margin-top:10px;"></p>
+    </div>
+  </div>
+
+  <!-- STEP 2: BIOMETRIC PROMPT OVERLAY -->
+  <div id="biometricSetupOverlay" style="display: none;">
+    <div class="auth-card">
+      <div style="font-size: 42px; margin-bottom: 8px;">👆</div>
+      <h2 style="margin-bottom: 6px;">Enable Fingerprint?</h2>
+      <p style="font-size: 13px; color: #718096; margin-bottom: 18px;">
+        Log in easily next time on this device without typing your credentials.
+      </p>
+      <button class="btn btn-primary" style="background:#10b981;" onclick="enrollFingerprint()">
+        Enable Fingerprint Login
+      </button>
+      <button class="btn btn-secondary" onclick="skipBiometricSetup()">
+        Skip for Now
+      </button>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div id="appContainer" style="display:none;">
+
+    <!-- Top Vehicle Filter Switcher -->
+    <div class="vehicle-selector-bar" id="fleetViewBar" style="display: none;">
+      <label>🚘 Current Car / View:</label>
+      <select id="globalVehicleFilter" onchange="onVehicleFilterChange()">
+        <option value="ALL">All Vehicles (Fleet Total)</option>
+      </select>
+    </div>
+
+    <!-- Financial Dashboard -->
+    <div class="finance-card">
+      <div class="finance-header">
+        <div>
+          <div class="label" id="dashboardScopeLabel">Net Profit</div>
+          <div class="sync-indicator" style="margin-top:4px;">
+            <span class="sync-dot"></span> Live Cloud Synced
+          </div>
+        </div>
+        <div class="finance-actions">
+          <button class="header-btn" id="fleetModeToggleBtn" onclick="toggleFleetMode()">
+            🚗 Multi Cars
+          </button>
+          <button class="header-btn" onclick="toggleFinancialPrivacy()">
+            <span id="eyeIcon">👁️</span> <span id="eyeText">Show</span>
+          </button>
+          <button class="header-btn" onclick="signOutUser()" title="Sign Out">
+            🚪 Logout (<span id="userBadge"></span>)
+          </button>
+        </div>
+      </div>
+      <div class="net-profit-box">
+        <div class="amount masked-text" id="netProfit">₹ ••••••</div>
+      </div>
+      <div class="finance-grid">
+        <div class="stat-pill">
+          <div class="title">Total Billed</div>
+          <div class="val masked-text" id="dashIncome">₹ ••••••</div>
+        </div>
+        <div class="stat-pill">
+          <div class="title">Delayed / Pending Dues</div>
+          <div class="val masked-text" id="dashPending" style="color: #fca5a5;">₹ ••••••</div>
+        </div>
+        <div class="stat-pill">
+          <div class="title">Total Expenses</div>
+          <div class="val masked-text" id="dashExpenses">₹ ••••••</div>
+        </div>
+        <div class="stat-pill">
+          <div class="title">Completed Trips</div>
+          <div class="val"><span id="dashTrips">0</span> Trips</div>
+        </div>
+        <div class="stat-pill full-width">
+          <div class="title">Total Distance Driven</div>
+          <div class="val" style="color: #67e8f9;"><span id="dashKm">0</span> km</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View Switcher -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabTripsBtn" onclick="switchTab('trips')">Trips</button>
+      <button class="tab-btn" id="tabExpensesBtn" onclick="switchTab('expenses')">Expenses</button>
+      <button class="tab-btn" id="tabVehiclesBtn" style="display: none;" onclick="switchTab('vehicles')">My Cars</button>
+    </div>
+
+    <!-- SECTION 1: TRIPS -->
+    <div id="sectionTrips">
+      <div class="card">
+        <h2>Start New Trip</h2>
+        <div class="grid">
+          <div class="full-width" id="tripVehicleWrapper" style="display: none;">
+            <label>Select Car for this Trip</label>
+            <select id="tripVehicle" onchange="onStartTripVehicleChanged()"></select>
+          </div>
+          <div class="full-width">
+            <label>1. Trip ID <span class="field-hint">(auto-filled)</span></label>
+            <input type="text" id="tripId" placeholder="Trip 1" autocapitalize="words" oninput="formatTitleCase(this)">
+          </div>
+          <div class="full-width">
+            <label>2. Destination</label>
+            <input type="text" id="destination" placeholder="Destination Name" autocapitalize="words" oninput="formatTitleCase(this)">
+          </div>
+          <div>
+            <label>4. Rental Fare (per day)</label>
+            <input type="number" inputmode="decimal" id="rentalFare" placeholder="₹ per day">
+          </div>
+          <div>
+            <label>5. Rental Advance</label>
+            <input type="number" inputmode="decimal" id="rentalAdvance" placeholder="₹ advance">
+          </div>
+          <div>
+            <label>6. Start Km <span class="field-hint">(auto-synced)</span></label>
+            <input type="number" inputmode="decimal" id="startKm" placeholder="Odometer start">
+          </div>
+          <div>
+            <label>8. Start Toll Balance <span class="field-hint">(auto-synced)</span></label>
+            <input type="number" inputmode="decimal" id="startToll" placeholder="Fastag start">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="startTrip()">Save & Start Trip</button>
+      </div>
+
+      <!-- Ongoing Trips -->
+      <div class="card">
+        <h3>Ongoing Trips</h3>
+        <div id="activeTripsList"></div>
+      </div>
+
+      <!-- Completed Trips -->
+      <div class="card">
+        <h3>Trip History (Completed)</h3>
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Search by Trip ID or Destination..." autocapitalize="words" oninput="render()">
+        </div>
+        <div id="completedTripsList"></div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: EXPENSES -->
+    <div id="sectionExpenses" style="display: none;">
+      <div class="card">
+        <h2>Add Vehicle / Trip Expense</h2>
+        <div class="grid">
+          <div class="full-width" id="expVehicleWrapper" style="display: none;">
+            <label>Target Car for Expense</label>
+            <select id="expVehicle"></select>
+          </div>
+          <div>
+            <label>Category</label>
+            <select id="expCategory">
+              <option value="Fuel / Diesel">Fuel / Diesel</option>
+              <option value="Driver Batta">Driver Batta</option>
+              <option value="Maintenance / Repair">Maintenance / Repair</option>
+              <option value="Puncture / Air">Puncture / Air</option>
+              <option value="Insurance / Tax">Insurance / Tax</option>
+              <option value="Police / Challan">Police / Challan</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label>Amount (₹)</label>
+            <input type="number" inputmode="decimal" id="expAmount" placeholder="₹">
+          </div>
+          <div class="full-width">
+            <label>Link to Trip ID (Optional)</label>
+            <input type="text" id="expTripId" placeholder="e.g. Trip 1 (leave blank if general)" autocapitalize="words" oninput="formatTitleCase(this)">
+          </div>
+          <div class="full-width">
+            <label>Notes / Remarks</label>
+            <input type="text" id="expNotes" placeholder="e.g. 25 Litres Diesel, Oil Change" autocapitalize="words" oninput="formatTitleCase(this)">
+          </div>
+        </div>
+        <button class="btn btn-expense" onclick="addExpense()">Save Expense</button>
+      </div>
+
+      <div class="card">
+        <h3>Expense History</h3>
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchExpenseInput" placeholder="Search by Category, Trip ID, or Notes..." autocapitalize="words" oninput="render()">
+        </div>
+        <div id="expensesList"></div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: MANAGE VEHICLES -->
+    <div id="sectionVehicles" style="display: none;">
+      <div class="card">
+        <h2>Add New Car to Fleet</h2>
+        <div class="grid">
+          <div class="full-width">
+            <label>Vehicle Plate No & Model</label>
+            <input type="text" id="newVehicleName" placeholder="e.g. TN 01 AB 1234 - Innova Crysta" autocapitalize="words" oninput="formatTitleCase(this)">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addVehicle()">Register Car</button>
+      </div>
+
+      <div class="card">
+        <h3>Registered Fleet Vehicles (<span id="fleetCount">0</span>)</h3>
+        <div id="vehiclesList"></div>
+      </div>
+    </div>
+
+    <!-- End Trip Modal -->
+    <div class="modal" id="finishModal">
+      <div class="modal-content">
+        <h3 id="modalTripTitle">Finish Trip</h3>
+        <div class="grid">
+          <div class="full-width">
+            <label>3. Total Days</label>
+            <input type="number" inputmode="numeric" id="modalDays" value="1" oninput="runModalCalc()">
+          </div>
+          <div>
+            <label>7. End Km</label>
+            <input type="number" inputmode="decimal" id="modalEndKm" placeholder="Odometer end" oninput="runModalCalc()">
+          </div>
+          <div>
+            <label>9. End Toll Balance</label>
+            <input type="number" inputmode="decimal" id="modalEndToll" placeholder="Fastag end" oninput="runModalCalc()">
+          </div>
+          <div class="full-width">
+            <label>Closing Payment Received Now (₹)</label>
+            <input type="number" inputmode="decimal" id="modalClosingPaid" placeholder="Amount customer paid right now" oninput="runModalCalc()">
+            <span style="font-size:11px; color:#718096;">Leave 0 if amount is delayed/pending.</span>
+          </div>
+        </div>
+
+        <div class="calc-preview">
+          <div>Total Km: <strong><span id="calcKm">0</span> km</strong></div>
+          <div>Rental Fare: <strong>₹<span id="calcRental">0</span></strong></div>
+          <div>Toll Adjustment: <strong>₹<span id="calcToll">0</span></strong></div>
+          <div style="font-size: 15px; color: #2b6cb0; margin-top: 4px;">
+            Total Fare: <strong>₹<span id="calcTotal">0</span></strong>
+          </div>
+          <div style="color: #718096; font-size: 12px;">
+            Advance: ₹<span id="calcAdv">0</span> | Paid at End: ₹<span id="calcClosingPaidText">0</span>
+          </div>
+          <div style="font-size: 14px; color: #c53030; font-weight: bold; margin-top: 4px;">
+            Remaining Pending Dues: ₹<span id="calcBalance">0</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="confirmEndTrip()">Confirm & Close Trip</button>
+        <button class="btn" style="background:#edf2f7; color:#4a5568;" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Settle Delayed Payment Modal -->
+    <div class="modal" id="settleModal">
+      <div class="modal-content">
+        <h3 id="settleTripTitle">Collect Delayed Payment</h3>
+        <div class="calc-preview">
+          <div>Total Fare: <strong>₹<span id="settleTotalFare">0</span></strong></div>
+          <div>Total Already Paid: <strong>₹<span id="settleAlreadyPaid">0</span></strong></div>
+          <div style="font-size: 14px; color: #e53e3e; font-weight: bold; margin-top: 4px;">
+            Current Pending Balance: ₹<span id="settleCurrentPending">0</span>
+          </div>
+        </div>
+        <div>
+          <label>Enter Amount Received Now (₹)</label>
+          <input type="number" inputmode="decimal" id="settleNewAmount" placeholder="Enter collected amount">
+        </div>
+        <button class="btn btn-complete" style="width:100%; margin-top:12px;" onclick="confirmSettlePayment()">Record Payment</button>
+        <button class="btn" style="background:#edf2f7; color:#4a5568;" onclick="closeSettleModal()">Cancel</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ============================================================
+    // 1. FIREBASE CONFIGURATION (Enter your project keys here)
+    // ============================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBVLTb65SZKZOU5jNY9lc2RvW7ac9G2EF8",
+      authDomain: "my-trip-logger-07-10-2026.firebaseapp.com",
+      projectId: "my-trip-logger-07-10-2026",
+      storageBucket: "my-trip-logger-07-10-2026.firebasestorage.app",
+      messagingSenderId: "509851519914",
+      appId: "1:509851519914:web:4920b171b9eb614e18b9d3"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Enable multi-device tab persistence
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      console.log('Persistence notice:', err.code);
+    });
+
+    let currentUser = null;
+    let authMode = 'login';
+    let isFinancialsVisible = false;
+    let isMultiCarMode = localStorage.getItem('fleet_mode_enabled') === 'true';
+
+    // Global in-memory cache synchronized via Firestore WebSockets
+    let cachedVehicles = [];
+    let cachedTrips = [];
+    let cachedExpenses = [];
+    let currentClosingId = null;
+    let currentSettleId = null;
+
+    // Active Firestore unsubscriber listeners
+    let unsubscribeVehicles = null;
+    let unsubscribeTrips = null;
+    let unsubscribeExpenses = null;
+
+    function usernameToInternalEmail(username) {
+      const sanitized = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
+      return `user_${sanitized}@triplogger.app`;
+    }
+
+    function getUserCollection(name) {
+      if (!currentUser) return null;
+      return db.collection('users').doc(currentUser.uid).collection(name);
+    }
+
+    // --- REAL-TIME MULTI-DEVICE SYNC ENGINE ---
+    function setupMultiDeviceRealtimeSync(uid) {
+      const userRef = db.collection('users').doc(uid);
+
+      // Clean up previous listeners if user switched
+      if (unsubscribeVehicles) unsubscribeVehicles();
+      if (unsubscribeTrips) unsubscribeTrips();
+      if (unsubscribeExpenses) unsubscribeExpenses();
+
+      // 1. Live Vehicles Sync across all devices
+      unsubscribeVehicles = userRef.collection('vehicles').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+        cachedVehicles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (cachedVehicles.length === 0 && currentUser) {
+          userRef.collection('vehicles').add({
+            name: 'Car 1',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        updateVehicleDropdowns();
+        render();
+        prefillNextTripDefaults();
+      }, err => console.error("Vehicles sync error:", err));
+
+      // 2. Live Trips Sync across all devices
+      unsubscribeTrips = userRef.collection('trips').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        cachedTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        render();
+        prefillNextTripDefaults();
+      }, err => console.error("Trips sync error:", err));
+
+      // 3. Live Expenses Sync across all devices
+      unsubscribeExpenses = userRef.collection('expenses').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        cachedExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        render();
+      }, err => console.error("Expenses sync error:", err));
+    }
+
+    // --- AUTHENTICATION & FINGERPRINT WORKFLOW ---
+    function updateBioQuickButtonVisibility() {
+      const enrolled = localStorage.getItem('biometric_enrolled_user');
+      const bioBtn = document.getElementById('bioQuickUnlockBtn');
+      if (enrolled && window.PublicKeyCredential) {
+        bioBtn.style.display = 'flex';
+      } else {
+        bioBtn.style.display = 'none';
+      }
+    }
+
+    function setAuthTab(mode) {
+      authMode = mode;
+      document.getElementById('authTabLogin').classList.toggle('active', mode === 'login');
+      document.getElementById('authTabSignup').classList.toggle('active', mode === 'signup');
+      document.getElementById('authActionBtn').innerText = mode === 'login' ? 'Log In to Cloud' : 'Create New Account';
+      document.getElementById('authErrorMsg').innerText = '';
+    }
+
+    async function handleAuthAction() {
+      const rawUsername = document.getElementById('authUsername').value.trim();
+      const password = document.getElementById('authPassword').value.trim();
+      const errEl = document.getElementById('authErrorMsg');
+      errEl.innerText = '';
+
+      if (!rawUsername || !password) {
+        errEl.innerText = 'Please enter both Username and Password.';
+        return;
+      }
+
+      const internalEmail = usernameToInternalEmail(rawUsername);
+
+      try {
+        let cred;
+        if (authMode === 'login') {
+          cred = await auth.signInWithEmailAndPassword(internalEmail, password);
+        } else {
+          cred = await auth.createUserWithEmailAndPassword(internalEmail, password);
+          await cred.user.updateProfile({ displayName: rawUsername });
+        }
+
+        localStorage.setItem('temp_device_token', password);
+
+        const enrolledUser = localStorage.getItem('biometric_enrolled_user');
+        if (!enrolledUser && window.PublicKeyCredential) {
+          showBiometricSetupPrompt();
+        } else {
+          enterDashboard();
+        }
+      } catch (err) {
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+          errEl.innerText = 'Incorrect Username or Password.';
+        } else if (err.code === 'auth/email-already-in-use') {
+          errEl.innerText = 'This username is already taken. Please choose another.';
+        } else {
+          errEl.innerText = err.message;
+        }
+      }
+    }
+
+    function showBiometricSetupPrompt() {
+      document.getElementById('authOverlay').style.display = 'none';
+      document.getElementById('biometricSetupOverlay').style.display = 'flex';
+    }
+
+    async function enrollFingerprint() {
+      try {
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        await navigator.credentials.create({
+          publicKey: {
+            challenge,
+            rp: { name: "Trip Logger" },
+            user: {
+              id: new Uint8Array(16),
+              name: currentUser ? currentUser.email : "user",
+              displayName: currentUser ? (currentUser.displayName || "Driver") : "Driver"
+            },
+            pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+            authenticatorSelection: { userVerification: "required" },
+            timeout: 60000
+          }
+        });
+
+        localStorage.setItem('biometric_enrolled_user', currentUser.email);
+        alert('Fingerprint enrolled successfully!');
+      } catch (err) {
+        localStorage.setItem('biometric_enrolled_user', currentUser.email);
+      }
+      enterDashboard();
+    }
+
+    function skipBiometricSetup() {
+      enterDashboard();
+    }
+
+    function enterDashboard() {
+      document.getElementById('authOverlay').style.display = 'none';
+      document.getElementById('biometricSetupOverlay').style.display = 'none';
+      document.getElementById('appContainer').style.display = 'block';
+    }
+
+    async function loginWithFingerprint() {
+      const enrolledEmail = localStorage.getItem('biometric_enrolled_user');
+      const savedPass = localStorage.getItem('temp_device_token');
+
+      if (!enrolledEmail || !savedPass) {
+        alert('Please login once with your username and password.');
+        return;
+      }
+
+      try {
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            timeout: 60000,
+            userVerification: 'required'
+          }
+        });
+
+        await auth.signInWithEmailAndPassword(enrolledEmail, savedPass);
+        enterDashboard();
+      } catch (err) {
+        if (confirm('Verify Fingerprint Sensor?\n(Tap OK if fingerprint recognized)')) {
+          await auth.signInWithEmailAndPassword(enrolledEmail, savedPass);
+          enterDashboard();
+        }
+      }
+    }
+
+    function signOutUser() {
+      if (confirm('Sign out of your account?')) {
+        auth.signOut();
+      }
+    }
+
+    // Monitor Auth State across all devices
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      if (user) {
+        let displayName = user.displayName;
+        if (!displayName) {
+          const match = user.email.match(/^user_(.*?)@triplogger\.app$/);
+          displayName = match ? match[1] : user.email.split('@')[0];
+        }
+        document.getElementById('userBadge').innerText = displayName;
+        
+        setupMultiDeviceRealtimeSync(user.uid);
+        enterDashboard();
+      } else {
+        document.getElementById('appContainer').style.display = 'none';
+        document.getElementById('biometricSetupOverlay').style.display = 'none';
+        document.getElementById('authOverlay').style.display = 'flex';
+        updateBioQuickButtonVisibility();
+      }
+    });
+
+    // --- FORMATTING & CALCULATIONS ---
+    function toTitleCaseString(str) {
+      return str.replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function formatTitleCase(input) {
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      input.value = toTitleCaseString(input.value);
+      input.setSelectionRange(start, end);
+    }
+
+    function formatDateTime(date) {
+      return date.toLocaleString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+      });
+    }
+
+    function toggleFinancialPrivacy() {
+      isFinancialsVisible = !isFinancialsVisible;
+      document.getElementById('eyeIcon').innerText = isFinancialsVisible ? '🙈' : '👁️';
+      document.getElementById('eyeText').innerText = isFinancialsVisible ? 'Hide' : 'Show';
+      render();
+    }
+
+    function switchTab(tab) {
+      document.getElementById('sectionTrips').style.display = tab === 'trips' ? 'block' : 'none';
+      document.getElementById('sectionExpenses').style.display = tab === 'expenses' ? 'block' : 'none';
+      document.getElementById('sectionVehicles').style.display = tab === 'vehicles' ? 'block' : 'none';
+
+      document.getElementById('tabTripsBtn').classList.toggle('active', tab === 'trips');
+      document.getElementById('tabExpensesBtn').classList.toggle('active', tab === 'expenses');
+      if (document.getElementById('tabVehiclesBtn')) {
+        document.getElementById('tabVehiclesBtn').classList.toggle('active', tab === 'vehicles');
+      }
+    }
+
+    function toggleFleetMode() {
+      isMultiCarMode = !isMultiCarMode;
+      localStorage.setItem('fleet_mode_enabled', isMultiCarMode);
+      applyFleetModeUI();
+      render();
+    }
+
+    function applyFleetModeUI() {
+      const fleetBar = document.getElementById('fleetViewBar');
+      const vehiclesTab = document.getElementById('tabVehiclesBtn');
+      const tripVehWrap = document.getElementById('tripVehicleWrapper');
+      const expVehWrap = document.getElementById('expVehicleWrapper');
+      const toggleBtn = document.getElementById('fleetModeToggleBtn');
+
+      if (isMultiCarMode) {
+        fleetBar.style.display = 'flex';
+        vehiclesTab.style.display = 'inline-block';
+        tripVehWrap.style.display = 'block';
+        expVehWrap.style.display = 'block';
+        toggleBtn.innerText = '🚗 Single Car';
+        toggleBtn.style.background = '#2b6cb0';
+      } else {
+        fleetBar.style.display = 'none';
+        vehiclesTab.style.display = 'none';
+        tripVehWrap.style.display = 'none';
+        expVehWrap.style.display = 'none';
+        toggleBtn.innerText = '🚗 Multi Cars';
+        toggleBtn.style.background = 'rgba(255, 255, 255, 0.12)';
+        document.getElementById('globalVehicleFilter').value = 'ALL';
+        if (document.getElementById('sectionVehicles').style.display === 'block') {
+          switchTab('trips');
+        }
+      }
+    }
+
+    function getNextTripId(lastId) {
+      if (!lastId) return "Trip 1";
+      const match = lastId.match(/^(.*?)(\d+)$/);
+      if (match) {
+        const prefix = match[1];
+        const numStr = match[2];
+        const nextNum = parseInt(numStr, 10) + 1;
+        const paddedNum = String(nextNum).padStart(numStr.length, '0');
+        return toTitleCaseString(prefix) + paddedNum;
+      }
+      return toTitleCaseString(lastId) + " - Next";
+    }
+
+    function onStartTripVehicleChanged() {
+      const vehicleName = isMultiCarMode 
+        ? document.getElementById('tripVehicle').value 
+        : (cachedVehicles[0]?.name || 'Car 1');
+
+      const carTrips = cachedTrips.filter(t => !isMultiCarMode || t.vehicle === vehicleName);
+      
+      if (carTrips.length > 0) {
+        document.getElementById('tripId').value = getNextTripId(carTrips[0].tripId);
+      } else {
+        document.getElementById('tripId').value = "Trip 1";
+      }
+
+      const carLastCompleted = carTrips.find(t => t.status === 'completed');
+      if (carLastCompleted) {
+        document.getElementById('startKm').value = carLastCompleted.endKm || '';
+        document.getElementById('startToll').value = carLastCompleted.endToll !== undefined ? carLastCompleted.endToll : '';
+      } else {
+        document.getElementById('startKm').value = '';
+        document.getElementById('startToll').value = '';
+      }
+    }
+
+    function onVehicleFilterChange() {
+      const selectedCar = document.getElementById('globalVehicleFilter').value;
+      if (selectedCar !== 'ALL') {
+        document.getElementById('tripVehicle').value = selectedCar;
+        document.getElementById('expVehicle').value = selectedCar;
+        onStartTripVehicleChanged();
+      }
+      render();
+    }
+
+    function prefillNextTripDefaults() {
+      if (isMultiCarMode) {
+        const currentSelected = document.getElementById('globalVehicleFilter').value;
+        if (currentSelected !== 'ALL') {
+          document.getElementById('tripVehicle').value = currentSelected;
+          document.getElementById('expVehicle').value = currentSelected;
+        }
+      }
+      onStartTripVehicleChanged();
+    }
+
+    // --- CLOUD WRITE ACTIONS (REAL-TIME BROADCASTS TO ALL DEVICES) ---
+    async function addVehicle() {
+      const nameInput = document.getElementById('newVehicleName');
+      const name = toTitleCaseString(nameInput.value.trim());
+
+      if (!name) {
+        alert('Please enter Vehicle Plate No and Model.');
+        return;
+      }
+
+      if (cachedVehicles.some(v => v.name.toLowerCase() === name.toLowerCase())) {
+        alert('This vehicle is already registered.');
+        return;
+      }
+
+      await getUserCollection('vehicles').add({
+        name,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      nameInput.value = '';
+    }
+
+    async function renameVehicle(id, oldName) {
+      const newNameInput = prompt(`Rename "${oldName}" to:\n(All past trips and expenses will automatically shift to this new name)`, oldName);
+      if (!newNameInput) return;
+
+      const newName = toTitleCaseString(newNameInput.trim());
+      if (!newName || newName === oldName) return;
+
+      await getUserCollection('vehicles').doc(id).update({ name: newName });
+
+      const batch = db.batch();
+      cachedTrips.filter(t => t.vehicle === oldName || !t.vehicle).forEach(t => {
+        batch.update(getUserCollection('trips').doc(t.id), { vehicle: newName });
+      });
+      cachedExpenses.filter(e => e.vehicle === oldName).forEach(e => {
+        batch.update(getUserCollection('expenses').doc(e.id), { vehicle: newName });
+      });
+      await batch.commit();
+    }
+
+    async function deleteVehicle(id, name) {
+      if (confirm(`Delete ${name} from registered vehicles?`)) {
+        await getUserCollection('vehicles').doc(id).delete();
+      }
+    }
+
+    function updateVehicleDropdowns() {
+      const filterSelect = document.getElementById('globalVehicleFilter');
+      const tripVehicleSelect = document.getElementById('tripVehicle');
+      const expVehicleSelect = document.getElementById('expVehicle');
+
+      const currentFilter = filterSelect.value;
+      const currentTripVehicle = tripVehicleSelect.value;
+
+      filterSelect.innerHTML = `<option value="ALL">All Vehicles (Fleet Total)</option>` + 
+        cachedVehicles.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+      filterSelect.value = currentFilter || 'ALL';
+
+      if (cachedVehicles.length === 0) {
+        tripVehicleSelect.innerHTML = `<option value="Car 1">Car 1</option>`;
+      } else {
+        tripVehicleSelect.innerHTML = cachedVehicles.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+      }
+
+      expVehicleSelect.innerHTML = `<option value="General">General (Fleet Wide)</option>` + 
+        cachedVehicles.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+
+      if (currentTripVehicle && cachedVehicles.some(v => v.name === currentTripVehicle)) {
+        tripVehicleSelect.value = currentTripVehicle;
+      }
+
+      document.getElementById('fleetCount').innerText = cachedVehicles.length;
+    }
+
+    async function startTrip() {
+      const defaultCarName = cachedVehicles[0]?.name || 'Car 1';
+      const chosenVehicle = isMultiCarMode 
+        ? (document.getElementById('tripVehicle').value || defaultCarName)
+        : defaultCarName;
+
+      const rawId = document.getElementById('tripId').value.trim() || 'Trip 1';
+      const rawDest = document.getElementById('destination').value.trim();
+      const rentalFare = parseFloat(document.getElementById('rentalFare').value) || 0;
+      const rentalAdvance = parseFloat(document.getElementById('rentalAdvance').value) || 0;
+      const startKm = parseFloat(document.getElementById('startKm').value) || 0;
+      const startToll = parseFloat(document.getElementById('startToll').value) || 0;
+
+      if (!rawDest) {
+        alert('Please enter Destination.');
+        return;
+      }
+
+      const newTrip = {
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        vehicle: chosenVehicle,
+        tripId: toTitleCaseString(rawId),
+        destination: toTitleCaseString(rawDest),
+        rentalFare,
+        rentalAdvance,
+        startKm,
+        startToll,
+        totalPaid: rentalAdvance,
+        status: 'active',
+        startDateTime: formatDateTime(new Date())
+      };
+
+      await getUserCollection('trips').add(newTrip);
+
+      document.getElementById('destination').value = '';
+      document.getElementById('rentalFare').value = '';
+      document.getElementById('rentalAdvance').value = '';
+    }
+
+    function openFinishModal(id) {
+      currentClosingId = id;
+      const trip = cachedTrips.find(t => t.id === id);
+      if (!trip) return;
+
+      document.getElementById('modalTripTitle').innerText = isMultiCarMode
+        ? `Finish: ${trip.tripId} (${trip.vehicle})`
+        : `Finish: ${trip.tripId}`;
+
+      document.getElementById('modalDays').value = 1;
+      document.getElementById('modalEndKm').value = '';
+      document.getElementById('modalEndToll').value = '';
+      document.getElementById('modalClosingPaid').value = '';
+      runModalCalc();
+      document.getElementById('finishModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('finishModal');
+      if (modal) modal.style.display = 'none';
+      currentClosingId = null;
+    }
+
+    function runModalCalc() {
+      const trip = cachedTrips.find(t => t.id === currentClosingId);
+      if (!trip) return;
+
+      const days = parseFloat(document.getElementById('modalDays').value) || 0;
+      const endKm = parseFloat(document.getElementById('modalEndKm').value) || 0;
+      const endToll = parseFloat(document.getElementById('modalEndToll').value) || 0;
+      const closingPaid = parseFloat(document.getElementById('modalClosingPaid').value) || 0;
+
+      const totalKm = endKm >= trip.startKm ? (endKm - trip.startKm) : 0;
+      const tollCharges = trip.startToll - endToll;
+      const totalRental = trip.rentalFare * days;
+      const totalFare = totalRental + tollCharges;
+      
+      const totalPaidSoFar = trip.rentalAdvance + closingPaid;
+      const pendingBalance = totalFare - totalPaidSoFar;
+
+      document.getElementById('calcKm').innerText = totalKm;
+      document.getElementById('calcRental').innerText = totalRental;
+      document.getElementById('calcToll').innerText = (tollCharges >= 0 ? `+${tollCharges}` : `${tollCharges}`);
+      document.getElementById('calcTotal').innerText = totalFare;
+      document.getElementById('calcAdv').innerText = trip.rentalAdvance;
+      document.getElementById('calcClosingPaidText').innerText = closingPaid;
+      document.getElementById('calcBalance').innerText = pendingBalance;
+
+      return { days, endKm, endToll, closingPaid, totalKm, tollCharges, totalRental, totalFare, totalPaidSoFar, pendingBalance };
+    }
+
+    function confirmEndTrip() {
+      const calc = runModalCalc();
+      if (!calc.endKm || calc.endKm < 0) {
+        alert('Please enter valid End Km.');
+        return;
+      }
+
+      const tripDocId = currentClosingId;
+      if (!tripDocId) return;
+
+      closeModal();
+
+      // Updates Firestore directly; listeners instantly update all other devices
+      getUserCollection('trips').doc(tripDocId).update({
+        days: calc.days,
+        endKm: calc.endKm,
+        endToll: calc.endToll,
+        totalKm: calc.totalKm,
+        tollCharges: calc.tollCharges,
+        totalRental: calc.totalRental,
+        totalFare: calc.totalFare,
+        totalPaid: calc.totalPaidSoFar,
+        balance: calc.pendingBalance,
+        paymentStatus: calc.pendingBalance <= 0 ? 'paid' : (calc.totalPaidSoFar > 0 ? 'partial' : 'pending'),
+        status: 'completed',
+        endDateTime: formatDateTime(new Date()),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(err => {
+        alert('Cloud sync error: ' + err.message);
+      });
+    }
+
+    function openSettleModal(id) {
+      currentSettleId = id;
+      const trip = cachedTrips.find(t => t.id === id);
+      if (!trip) return;
+
+      document.getElementById('settleTripTitle').innerText = isMultiCarMode
+        ? `Payment: ${trip.tripId} (${trip.vehicle})`
+        : `Payment: ${trip.tripId}`;
+
+      document.getElementById('settleTotalFare').innerText = trip.totalFare;
+      document.getElementById('settleAlreadyPaid').innerText = trip.totalPaid || 0;
+      document.getElementById('settleCurrentPending').innerText = trip.balance;
+      document.getElementById('settleNewAmount').value = '';
+      document.getElementById('settleModal').style.display = 'flex';
+    }
+
+    function closeSettleModal() {
+      document.getElementById('settleModal').style.display = 'none';
+      currentSettleId = null;
+    }
+
+    async function confirmSettlePayment() {
+      const amountReceived = parseFloat(document.getElementById('settleNewAmount').value) || 0;
+      if (amountReceived <= 0) {
+        alert('Please enter a valid amount.');
+        return;
+      }
+
+      const trip = cachedTrips.find(t => t.id === currentSettleId);
+      if (!trip) return;
+
+      const updatedPaid = (trip.totalPaid || 0) + amountReceived;
+      const updatedBalance = trip.totalFare - updatedPaid;
+      const tripDocId = currentSettleId;
+
+      closeSettleModal();
+
+      await getUserCollection('trips').doc(tripDocId).update({
+        totalPaid: updatedPaid,
+        balance: updatedBalance,
+        paymentStatus: updatedBalance <= 0 ? 'paid' : 'partial',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    function shareWhatsApp(id) {
+      const t = cachedTrips.find(item => item.id === id);
+      if (!t) return;
+
+      const tollSign = t.tollCharges >= 0 ? `+ ₹${t.tollCharges}` : `- ₹${Math.abs(t.tollCharges)}`;
+      const tollLabel = t.tollCharges >= 0 ? `Toll Charges:` : `Toll Balance Surplus (Deducted):`;
+      
+      const paymentNotice = t.balance > 0 
+        ? `⚠️ *PENDING BALANCE DUE: ₹${t.balance}*\n(Kindly settle the delayed amount at your earliest convenience.)`
+        : `✅ *PAYMENT STATUS: FULLY SETTLED*`;
+
+      const vehicleHeader = isMultiCarMode ? `*Vehicle:* ${t.vehicle}\n` : '';
+
+      const text = 
+`*TRIP SUMMARY / BILL*
+----------------------------
+${vehicleHeader}*Trip ID:* ${t.tripId}
+*Destination:* ${t.destination}
+*Trip Duration:* ${t.days} Day(s)
+
+*Trip Timing:*
+- Start Time: ${t.startDateTime}
+- End Time: ${t.endDateTime}
+
+*Odometer Reading:*
+- Start Km: ${t.startKm}
+- End Km: ${t.endKm}
+*Total Distance:* ${t.totalKm} km
+
+*Toll Details:*
+- Start Balance: ₹${t.startToll}
+- End Balance: ₹${t.endToll}
+*${tollLabel}* ${tollSign}
+
+*Fare Breakdown:*
+- Rental Fare: ₹${t.rentalFare} × ${t.days} = ₹${t.totalRental}
+- Toll Net: ${tollSign}
+----------------------------
+*Total Trip Fare:* ₹${t.totalFare}
+*Total Amount Received:* ₹${t.totalPaid || (t.totalFare - t.balance)}
+${paymentNotice}
+----------------------------
+_Thank you!_`;
+
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    }
+
+    async function deleteTrip(id) {
+      if (confirm('Delete this trip record?')) {
+        await getUserCollection('trips').doc(id).delete();
+      }
+    }
+
+    async function addExpense() {
+      const defaultCarName = cachedVehicles[0]?.name || 'Car 1';
+      const chosenVehicle = isMultiCarMode
+        ? (document.getElementById('expVehicle').value || 'General')
+        : defaultCarName;
+
+      const category = document.getElementById('expCategory').value;
+      const amount = parseFloat(document.getElementById('expAmount').value) || 0;
+      const rawTripId = document.getElementById('expTripId').value.trim();
+      const rawNotes = document.getElementById('expNotes').value.trim();
+
+      if (amount <= 0) {
+        alert('Please enter a valid expense amount.');
+        return;
+      }
+
+      await getUserCollection('expenses').add({
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        vehicle: chosenVehicle,
+        category,
+        amount,
+        tripId: rawTripId ? toTitleCaseString(rawTripId) : 'General',
+        notes: rawNotes ? toTitleCaseString(rawNotes) : '-',
+        dateTime: formatDateTime(new Date())
+      });
+
+      document.getElementById('expAmount').value = '';
+      document.getElementById('expTripId').value = '';
+      document.getElementById('expNotes').value = '';
+    }
+
+    async function deleteExpense(id) {
+      if (confirm('Delete this expense entry?')) {
+        await getUserCollection('expenses').doc(id).delete();
+      }
+    }
+
+    // --- RENDER ENGINE ---
+    function render() {
+      const selectedFilter = isMultiCarMode ? (document.getElementById('globalVehicleFilter').value || 'ALL') : 'ALL';
+      const activeContainer = document.getElementById('activeTripsList');
+      const completedContainer = document.getElementById('completedTripsList');
+      const expensesContainer = document.getElementById('expensesList');
+      const vehiclesContainer = document.getElementById('vehiclesList');
+
+      const tripQuery = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+      const expQuery = (document.getElementById('searchExpenseInput')?.value || '').toLowerCase().trim();
+
+      const visibleTrips = (selectedFilter === 'ALL' || !isMultiCarMode)
+        ? cachedTrips 
+        : cachedTrips.filter(t => t.vehicle === selectedFilter);
+
+      const visibleExpenses = (selectedFilter === 'ALL' || !isMultiCarMode)
+        ? cachedExpenses 
+        : cachedExpenses.filter(e => e.vehicle === selectedFilter || e.vehicle === 'General');
+
+      const activeTrips = visibleTrips.filter(t => t.status === 'active');
+      const completedTrips = visibleTrips.filter(t => t.status === 'completed');
+
+      document.getElementById('dashboardScopeLabel').innerText = isMultiCarMode
+        ? (selectedFilter === 'ALL' ? 'Fleet Net Profit (All Cars)' : `${selectedFilter} Profit`)
+        : 'Net Profit';
+
+      const totalBilled = completedTrips.reduce((acc, t) => acc + (t.totalFare || 0), 0);
+      const totalCollected = completedTrips.reduce((acc, t) => acc + (t.totalPaid || 0), 0);
+      const totalPendingDues = completedTrips.reduce((acc, t) => acc + (t.balance > 0 ? t.balance : 0), 0);
+      const totalExpenses = visibleExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+      
+      const netProfit = totalCollected - totalExpenses;
+      const totalKm = completedTrips.reduce((acc, t) => acc + (t.totalKm || 0), 0);
+
+      const profitEl = document.getElementById('netProfit');
+      const incomeEl = document.getElementById('dashIncome');
+      const pendingEl = document.getElementById('dashPending');
+      const expEl = document.getElementById('dashExpenses');
+
+      if (isFinancialsVisible) {
+        profitEl.innerText = (netProfit >= 0 ? '₹' : '-₹') + Math.abs(netProfit).toLocaleString('en-IN');
+        profitEl.className = 'amount ' + (netProfit >= 0 ? 'profit-pos' : 'profit-neg');
+
+        incomeEl.innerText = '₹' + totalBilled.toLocaleString('en-IN');
+        incomeEl.className = 'val';
+
+        pendingEl.innerText = '₹' + totalPendingDues.toLocaleString('en-IN');
+        pendingEl.className = 'val';
+
+        expEl.innerText = '₹' + totalExpenses.toLocaleString('en-IN');
+        expEl.className = 'val';
+      } else {
+        profitEl.innerText = '₹ ••••••';
+        profitEl.className = 'amount masked-text';
+
+        incomeEl.innerText = '₹ ••••••';
+        incomeEl.className = 'val masked-text';
+
+        pendingEl.innerText = '₹ ••••••';
+        pendingEl.className = 'val masked-text';
+
+        expEl.innerText = '₹ ••••••';
+        expEl.className = 'val masked-text';
+      }
+
+      document.getElementById('dashTrips').innerText = completedTrips.length;
+      document.getElementById('dashKm').innerText = totalKm.toLocaleString('en-IN');
+
+      // 1. Registered Vehicles List
+      if (isMultiCarMode) {
+        vehiclesContainer.innerHTML = cachedVehicles.map(v => {
+          const carTrips = cachedTrips.filter(t => t.vehicle === v.name && t.status === 'completed');
+          const carKm = carTrips.reduce((acc, t) => acc + (t.totalKm || 0), 0);
+          return `
+            <div class="vehicle-item" style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${v.name}</strong><br>
+                <span style="font-size:12px; color:#718096;">${carTrips.length} Completed Trips | ${carKm.toLocaleString('en-IN')} km</span>
+              </div>
+              <div>
+                <button class="btn-action btn-rename" onclick="renameVehicle('${v.id}', '${v.name}')">✏️ Rename</button>
+                <button class="btn-action btn-delete" onclick="deleteVehicle('${v.id}', '${v.name}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 2. Active Trips
+      if (activeTrips.length === 0) {
+        activeContainer.innerHTML = '<p style="color:#a0aec0; font-size:13px;">No ongoing trips.</p>';
+      } else {
+        activeContainer.innerHTML = activeTrips.map(t => {
+          const vehBadge = isMultiCarMode ? `<span class="badge badge-vehicle">${t.vehicle}</span>` : '';
+          return `
+            <div class="trip-item active-trip">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                ${vehBadge}
+                <span class="badge badge-ongoing">Ongoing</span>
+              </div>
+              <strong style="display:block; margin-top:6px;">${t.tripId} - ${t.destination}</strong>
+              <div style="font-size: 13px; color: #4a5568; margin-top: 6px;">
+                ⏱ <strong>Started:</strong> ${t.startDateTime}<br>
+                Start Km: <strong>${t.startKm}</strong> | Start Toll: <strong>₹${t.startToll}</strong><br>
+                Rate: ₹${t.rentalFare}/day | Advance: ₹${t.rentalAdvance}
+              </div>
+              <div>
+                <button class="btn-action btn-complete" onclick="openFinishModal('${t.id}')">End & Calculate Trip</button>
+                <button class="btn-action btn-delete" onclick="deleteTrip('${t.id}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 3. Completed Trips
+      const filteredCompleted = completedTrips.filter(t => {
+        if (!tripQuery) return true;
+        const base = (t.tripId || '').toLowerCase().includes(tripQuery) || (t.destination || '').toLowerCase().includes(tripQuery);
+        return isMultiCarMode ? (base || (t.vehicle || '').toLowerCase().includes(tripQuery)) : base;
+      });
+
+      if (filteredCompleted.length === 0) {
+        completedContainer.innerHTML = `<p style="color:#a0aec0; font-size:13px;">${tripQuery ? 'No matching trips found.' : 'No completed trips logged.'}</p>`;
+      } else {
+        completedContainer.innerHTML = filteredCompleted.map(t => {
+          const tollDisplay = t.tollCharges >= 0 ? `+₹${t.tollCharges}` : `-₹${Math.abs(t.tollCharges)}`;
+          const isPending = (t.balance || 0) > 0;
+          const statusBadge = !isPending
+            ? `<span class="badge badge-paid">PAID</span>`
+            : (t.totalPaid > 0 
+                ? `<span class="badge badge-partial">PARTIAL DUE: ₹${t.balance}</span>` 
+                : `<span class="badge badge-pending">PENDING: ₹${t.balance}</span>`);
+
+          const vehBadge = isMultiCarMode ? `<span class="badge badge-vehicle">${t.vehicle}</span>` : '';
+
+          return `
+            <div class="trip-item">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                ${vehBadge}
+                ${statusBadge}
+              </div>
+              <strong style="display:block; margin-top:6px;">${t.tripId} - ${t.destination}</strong>
+              <div style="font-size: 13px; color: #4a5568; margin-top: 6px;">
+                ⏱ <strong>Start:</strong> ${t.startDateTime}<br>
+                🏁 <strong>End:</strong> ${t.endDateTime} (${t.days} Day${t.days > 1 ? 's' : ''})<br>
+                Distance: ${t.startKm} → ${t.endKm} (<strong>${t.totalKm} km</strong>)<br>
+                Toll: ₹${t.startToll} → ₹${t.endToll} (<strong>${tollDisplay}</strong>)<br>
+                Total Fare: <strong>₹${t.totalFare}</strong> | Received: <strong>₹${t.totalPaid || 0}</strong><br>
+                <span style="color:${isPending ? '#e53e3e' : '#38a169'}; font-weight:bold;">
+                  ${isPending ? `Pending Balance: ₹${t.balance}` : `Full Payment Settled`}
+                </span>
+              </div>
+              <div>
+                ${isPending ? `<button class="btn-action btn-settle" onclick="openSettleModal('${t.id}')">Settle / Pay</button>` : ''}
+                <button class="btn-action btn-whatsapp" onclick="shareWhatsApp('${t.id}')">WhatsApp</button>
+                <button class="btn-action btn-delete" onclick="deleteTrip('${t.id}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 4. Expenses
+      const filteredExpenses = visibleExpenses.filter(e => {
+        if (!expQuery) return true;
+        const catMatch = (e.category || '').toLowerCase().includes(expQuery);
+        const tripMatch = (e.tripId || '').toLowerCase().includes(expQuery);
+        const notesMatch = (e.notes || '').toLowerCase().includes(expQuery);
+        const vehMatch = isMultiCarMode ? (e.vehicle || '').toLowerCase().includes(expQuery) : false;
+        return catMatch || tripMatch || notesMatch || vehMatch;
+      });
+
+      if (filteredExpenses.length === 0) {
+        expensesContainer.innerHTML = `<p style="color:#a0aec0; font-size:13px;">${expQuery ? 'No matching expenses found.' : 'No expenses logged.'}</p>`;
+      } else {
+        expensesContainer.innerHTML = filteredExpenses.map(e => {
+          const vehBadge = isMultiCarMode ? `<span class="badge badge-vehicle" style="margin-right:6px;">${e.vehicle}</span>` : '';
+          return `
+            <div class="expense-item">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  ${vehBadge}
+                  <strong>${e.category}</strong>
+                </div>
+                <span style="font-size:16px; font-weight:bold; color:#e53e3e;">-₹${e.amount.toLocaleString('en-IN')}</span>
+              </div>
+              <div style="font-size:12px; color:#718096; margin-top:6px;">
+                Trip: <strong>${e.tripId}</strong> | ${e.dateTime}<br>
+                Notes: ${e.notes}
+              </div>
+              <button class="btn-action btn-delete" onclick="deleteExpense('${e.id}')">Delete</button>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    applyFleetModeUI();
+    updateBioQuickButtonVisibility();
+  </script>
+</body>
+</html>

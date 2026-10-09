@@ -10,34 +10,30 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Prepare Web Assets & Install Capacitor
+      - name: Build Web App Shell
         run: |
           mkdir -p www
-          find . -maxdepth 1 -not -name 'www' -not -name '.github' -not -name '.git' -exec cp -r {} www/ \;
+          cp -r index.html www/ || true
+          cp -r *.css www/ 2>/dev/null || true
+          cp -r *.js www/ 2>/dev/null || true
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "MyApp" "com.cleanapp.webview" --web-dir www
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npx cap init "MyApp" "org.clean.myapp" --web-dir www
           npx cap add android
-
-      - name: Compile Debug APK
-        run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload Clean APK
         uses: actions/upload-artifact@v4
